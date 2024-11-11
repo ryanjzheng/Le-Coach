@@ -83,8 +83,68 @@ export class ChatService {
         thoughts: thoughts,
       },
     };
+  }
 
+  async *runWithStreaming(messages: AIChatMessage[]): AsyncGenerator<AIChatCompletionDelta, void> {
 
+    // TODO: implement Retrieval Augmented Generation (RAG) here
+    // Get the content of the last message (the question)
+    const query = messages[messages.length - 1].content;
+
+    // Performs a vector similarity search.
+    // Embedding for the query is automatically computed
+    const documents = await this.vectorStore.similaritySearch(query, 3);
+
+    const results: string[] = [];
+    for (const document of documents) {
+      const source = document.metadata.source;
+      const content = document.pageContent.replaceAll(/[\n\r]+/g, ' ');
+      results.push(`${source}: ${content}`);
+    }
+
+    const content = results.join('\n');
+
+    // Set the context with the system message
+    const systemMessage = SYSTEM_MESSAGE_PROMPT;
+
+    // Get the latest user message (the question), and inject the sources into it
+    const userMessage = `${messages[messages.length - 1].content}\n\nSources:\n${content}`;
+
+    // Create the messages prompt
+    const messageBuilder = new MessageBuilder(systemMessage, this.config.azureOpenAiApiModelName);
+    messageBuilder.appendMessage('user', userMessage);
+
+    // Add the previous messages to the prompt, as long as we don't exceed the token limit
+    for (const historyMessage of messages.slice(0, -1).reverse()) {
+      if (messageBuilder.tokens > this.tokenLimit) {
+        messageBuilder.popMessage();
+        break;
+      }
+      messageBuilder.appendMessage(historyMessage.role, historyMessage.content);
+    }
+
+    // Processing details, for debugging purposes
+    const conversation = messageBuilder.messages.map((m) => `${m.role}: ${m.content}`).join('\n\n');
+    const thoughts = `Search query:\n${query}\n\nConversation:\n${conversation}`.replaceAll('\n', '<br>');
+
+    const completion = await this.model.stream(messageBuilder.getMessages());
+    let id = 0;
+
+    // Process the completion in chunks
+    for await (const chunk of completion) {
+      const responseChunk = {
+        delta: {
+          content: (chunk.content as string) ?? '',
+          role: 'assistant' as const,
+        },
+        context: id === 0 ? {
+          data_points: results,
+          thoughts,
+        } : {},
+      };
+      yield responseChunk;
+      id++;
+    }
   }
 }
 
@@ -118,7 +178,7 @@ export default fp(
       // Only needed because we make the OpenAI endpoint configurable
       azureOpenAIBasePath: `${config.azureOpenAiApiEndpoint}/openai/deployments`,
       // Controls randomness. 0 = deterministic, 1 = maximum randomness
-      temperature: 0.7,
+      temperature: 0.2,
       // Maximum number of tokens to generate
       maxTokens: 1024,
       // Number of completions to generate

@@ -24,7 +24,7 @@
       "value": "${AZURE_OPENAI_API_VERSION=2024-02-01}"
     },
     "searchServiceSkuName": {
-      "value": "${AZURE_SEARCH_SERVICE_SKU=standard}"
+      "value": "basic" 
     },
     "chatModelName": {
       "value": "${AZURE_OPENAI_API_MODEL=gpt-4o-mini}"

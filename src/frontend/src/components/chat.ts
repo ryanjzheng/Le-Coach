@@ -45,7 +45,7 @@ export type ChatComponentOptions = ChatRequestOptions & {
 
 export const defaultOptions: ChatComponentOptions = {
   enableContentLinks: false,
-  stream: false,
+  stream: true,
   chunkIntervalMs: 30,
   apiUrl: '',
   enablePromptSuggestions: true,
